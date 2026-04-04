@@ -12,6 +12,7 @@ post_install do |installer|
       if config.build_settings['MACOSX_DEPLOYMENT_TARGET'] == '' || Gem::Version.new(config.build_settings['MACOSX_DEPLOYMENT_TARGET']) < Gem::Version.new("10.14")
         config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '10.14'
       end
+
     end
   end
 end
