@@ -1,0 +1,77 @@
+PODS:
+  - Alamofire (5.11.1)
+  - AppCenter/Analytics (5.12.0):
+    - AppCenter/Core
+  - AppCenter/Core (5.12.0)
+  - AppCenter/Crashes (5.12.0):
+    - AppCenter/Core
+  - CocoaLumberjack/Core (3.8.5)
+  - CocoaLumberjack/Swift (3.8.5):
+    - CocoaLumberjack/Core
+  - FlexibleDiff (0.0.9)
+  - GzipSwift (5.1.1)
+  - LetsMove (1.25)
+  - RxCocoa (6.9.0):
+    - RxRelay (= 6.9.0)
+    - RxSwift (= 6.9.0)
+  - RxRelay (6.9.0):
+    - RxSwift (= 6.9.0)
+  - RxSwift (6.9.0)
+  - Sparkle (2.8.1)
+  - Starscream (3.1.1)
+  - SwiftFormat/CLI (0.60.1)
+  - SwiftLint (0.63.2)
+  - SwiftyJSON (5.0.2)
+
+DEPENDENCIES:
+  - Alamofire (~> 5.0)
+  - AppCenter/Analytics
+  - AppCenter/Crashes
+  - CocoaLumberjack/Swift (~> 3.8.0)
+  - FlexibleDiff
+  - GzipSwift
+  - LetsMove
+  - RxCocoa (~> 6.0)
+  - RxSwift (~> 6.0)
+  - Sparkle (~> 2.0)
+  - Starscream (= 3.1.1)
+  - SwiftFormat/CLI (~> 0.49)
+  - SwiftLint
+  - SwiftyJSON
+
+SPEC REPOS:
+  trunk:
+    - Alamofire
+    - AppCenter
+    - CocoaLumberjack
+    - FlexibleDiff
+    - GzipSwift
+    - LetsMove
+    - RxCocoa
+    - RxRelay
+    - RxSwift
+    - Sparkle
+    - Starscream
+    - SwiftFormat
+    - SwiftLint
+    - SwiftyJSON
+
+SPEC CHECKSUMS:
+  Alamofire: eec6cd8f73b242b59e34153a606a909eb9864b14
+  AppCenter: 38e27eb52113bff74426db9f500726933c8d2fd7
+  CocoaLumberjack: 6a459bc897d6d80bd1b8c78482ec7ad05dffc3f0
+  FlexibleDiff: b9ee9b8305b42c784f5dd40589203c97c55bbaa0
+  GzipSwift: 893f3e48e597a1a4f62fafcb6514220fcf8287fa
+  LetsMove: 7b9fe44737707d984fbd3f47af46609a9a07b461
+  RxCocoa: ac16414696ae706516be3e1ab00fcce5bdc9be8a
+  RxRelay: 6b0c930e5cef57d5fe2032571e5e65b78e3cbdb1
+  RxSwift: 31649ace6aceeb422e16ff71c60804f9c3281ed9
+  Sparkle: a346a4341537c625955751ed3ae4b340b68551fa
+  Starscream: 4bb2f9942274833f7b4d296a55504dcfc7edb7b0
+  SwiftFormat: d32a8ff584c3e08fb5b0eb7f5dc610e02067df53
+  SwiftLint: 4fa4a9b437ccc4fc72f6c0bc98556e8e9e05bccf
+  SwiftyJSON: f5b1bf1cd8dd53cd25887ac0eabcfd92301c6a5a
+
+PODFILE CHECKSUM: df20fa8359a50c58145e061d4afdb237e7f64048
+
+COCOAPODS: 1.16.2
