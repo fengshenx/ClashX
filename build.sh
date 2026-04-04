@@ -32,20 +32,18 @@ CONFIG_TITLE="$(tr '[:lower:]' '[:upper:]' <<< "${CONFIG:0:1}")${CONFIG:1}"
 
 echo "Building ClashX ($CONFIG_TITLE)..."
 
-BUILD_DIR=$(xcodebuild -workspace ClashX.xcworkspace \
-  -scheme ClashX \
-  -configuration "$CONFIG_TITLE" \
-  -showBuildSettings 2>/dev/null | grep " BUILT_PRODUCTS_DIR = " | awk '{print $3}')
-
 xcodebuild -workspace ClashX.xcworkspace \
   -scheme ClashX \
   -configuration "$CONFIG_TITLE" \
   -onlyUsePackageVersionsFromResolvedFile \
   build
 
-APP_PATH="$BUILD_DIR/ClashX.app"
-
 if [[ "$RUN" == true ]]; then
+  BUILD_DIR=$(xcodebuild -workspace ClashX.xcworkspace \
+    -scheme ClashX \
+    -configuration "$CONFIG_TITLE" \
+    -showBuildSettings 2>/dev/null | grep " BUILT_PRODUCTS_DIR = " | awk '{print $3}')
+  APP_PATH="$BUILD_DIR/ClashX.app"
   echo "Opening $APP_PATH ..."
   open "$APP_PATH"
 fi

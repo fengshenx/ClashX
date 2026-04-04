@@ -15,21 +15,11 @@ class ProxyDelayHistoryMenu: NSMenu {
     init(proxy: ClashProxy) {
         super.init(title: "")
         updateHistoryMenu(proxy: proxy)
-        NotificationCenter.default.addObserver(self, selector: #selector(proxyInfoDidUpdate(note:)), name: .proxyUpdate(for: proxy.name), object: nil)
     }
 
     @available(*, unavailable)
     required init(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-
-    @objc private func proxyInfoDidUpdate(note: Notification) {
-        guard let info = note.object as? ClashProxy else { return }
-        updateHistoryMenu(proxy: info)
     }
 
     private func updateHistoryMenu(proxy: ClashProxy) {

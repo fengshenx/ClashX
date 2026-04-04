@@ -10,11 +10,10 @@ import Cocoa
 
 class ProxyMenuItem: NSMenuItem {
     let proxyName: String
+    let groupName: String
     let maxProxyNameLength: CGFloat
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
+    var needsDelayHistory: Bool = false
+    private let isSimpleItem: Bool
 
     var enableShowUsingView: Bool {
         MenuItemFactory.useViewToRenderProxy
@@ -25,7 +24,8 @@ class ProxyMenuItem: NSMenuItem {
          action selector: Selector?,
          simpleItem: Bool = false) {
         proxyName = proxy.name
-
+        groupName = group.name
+        isSimpleItem = simpleItem
         maxProxyNameLength = simpleItem ? 0 : group.maxProxyNameLength
 
         super.init(title: proxyName, action: selector, keyEquivalent: "")
@@ -38,11 +38,9 @@ class ProxyMenuItem: NSMenuItem {
         let selected = group.now == proxy.name
         updateSelected(selected)
 
-        NotificationCenter.default.addObserver(self, selector: #selector(proxyGroupInfoUpdate(note:)), name: .proxyUpdate(for: group.name), object: nil)
-
-        if !simpleItem {
-            NotificationCenter.default.addObserver(self, selector: #selector(updateDelayNotification(note:)), name: .speedTestFinishForProxy, object: nil)
-            NotificationCenter.default.addObserver(self, selector: #selector(proxyInfoUpdate(note:)), name: .proxyUpdate(for: proxy.name), object: nil)
+        // Apply cached delay (shared across groups for the same server)
+        if let cached = ProxyDelayCache.shared.get(proxyName) {
+            updateDelay(cached.display, rawValue: cached.raw)
         }
     }
 
@@ -58,32 +56,16 @@ class ProxyMenuItem: NSMenuItem {
         menu?.cancelTracking()
     }
 
-    @objc private func updateDelayNotification(note: Notification) {
-        guard let name = note.userInfo?["proxyName"] as? String, name == proxyName else {
-            return
+    /// Called by ProxyGroupMenu when submenu opens or data refreshes
+    func refreshFromCache(group: ClashProxy?) {
+        // Update selection
+        if let group = group {
+            updateSelected(group.now == proxyName)
         }
-        if let delay = note.userInfo?["delay"] as? String {
-            updateDelay(delay, rawValue: note.userInfo?["rawValue"] as? Int)
+        // Update delay from global cache
+        if let cached = ProxyDelayCache.shared.get(proxyName) {
+            updateDelay(cached.display, rawValue: cached.raw)
         }
-    }
-
-    @objc private func proxyInfoUpdate(note: Notification) {
-        guard let info = note.object as? ClashProxy else {
-            assertionFailure()
-            return
-        }
-        if info.alive == false {
-            updateDelay(NSLocalizedString("fail", comment: ""), rawValue: 0)
-        } else {
-            updateDelay(info.history.last?.delayDisplay, rawValue: info.history.last?.delay)
-        }
-    }
-
-    @objc private func proxyGroupInfoUpdate(note: Notification) {
-        guard let group = note.object as? ClashProxy else { return }
-        guard ClashProxyType.isProxyGroup(group) else { return }
-        let selected = group.now == proxyName
-        updateSelected(selected)
     }
 
     private func updateSelected(_ selected: Bool) {
@@ -95,8 +77,8 @@ class ProxyMenuItem: NSMenuItem {
     }
 
     private func updateDelay(_ delay: String?, rawValue: Int?) {
-        if enableShowUsingView {
-            (view as? ProxyItemView)?.update(str: delay, value: rawValue)
+        if let v = view as? ProxyItemView {
+            v.update(str: delay, value: rawValue)
         } else {
             attributedTitle = getAttributedTitle(name: proxyName, delay: delay)
         }

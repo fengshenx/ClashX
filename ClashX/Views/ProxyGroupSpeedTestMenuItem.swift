@@ -114,13 +114,22 @@ private class ProxyGroupSpeedTestMenuItemView: MenuItemBaseView {
             }
         }
 
+        let enclosingMenu = enclosingMenuItem?.menu
+
         for proxyName in proxies {
             testGroup.enter()
             ApiRequest.getProxyDelay(proxyName: proxyName) { delay in
                 let delayStr = delay == 0 ? NSLocalizedString("fail", comment: "") : "\(delay) ms"
-                NotificationCenter.default.post(name: .speedTestFinishForProxy,
-                                                object: nil,
-                                                userInfo: ["proxyName": proxyName, "delay": delayStr, "rawValue": delay])
+                ProxyDelayCache.shared.update(name: proxyName, delay: delayStr, raw: delay)
+                // Update visible menu item immediately
+                if let menu = enclosingMenu {
+                    for item in menu.items {
+                        if let proxyItem = item as? ProxyMenuItem, proxyItem.proxyName == proxyName {
+                            proxyItem.refreshFromCache(group: nil)
+                            break
+                        }
+                    }
+                }
                 testGroup.leave()
             }
         }

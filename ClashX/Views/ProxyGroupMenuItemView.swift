@@ -26,6 +26,7 @@ class ProxyGroupMenuItemView: MenuItemBaseView {
 
     private var leftPaddingConstraint: NSLayoutConstraint?
     private let leftPadding: CGFloat = 20
+    private let groupName: ClashProxyName
 
     override var cells: [NSCell?] {
         return [groupNameLabel.cell, selectProxyLabel.cell, arrowLabel.cell]
@@ -34,6 +35,7 @@ class ProxyGroupMenuItemView: MenuItemBaseView {
     init(group: ClashProxyName, targetProxy: ClashProxyName, hasLeftPadding: Bool, observeUpdate: Bool = true) {
         groupNameLabel = VibrancyTextField(labelWithString: group)
         selectProxyLabel = VibrancyTextField(labelWithString: targetProxy)
+        groupName = group
         super.init(autolayout: true)
 
         // arrow
@@ -79,7 +81,7 @@ class ProxyGroupMenuItemView: MenuItemBaseView {
         selectProxyLabel.textColor = NSColor.secondaryLabelColor
         // noti
         if observeUpdate {
-            NotificationCenter.default.addObserver(self, selector: #selector(proxyInfoDidUpdate(note:)), name: .proxyUpdate(for: group), object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(batchProxyUpdate(note:)), name: .proxyBatchUpdate, object: nil)
         }
         if #available(macOS 11, *) {
             updateLeftMenuPadding(show: hasLeftPadding)
@@ -104,8 +106,9 @@ class ProxyGroupMenuItemView: MenuItemBaseView {
         NotificationCenter.default.removeObserver(self)
     }
 
-    @objc private func proxyInfoDidUpdate(note: NSNotification) {
-        guard let info = note.object as? ClashProxy else { assertionFailure(); return }
+    @objc private func batchProxyUpdate(note: NSNotification) {
+        guard let map = note.userInfo?["proxiesMap"] as? [ClashProxyName: ClashProxy],
+              let info = map[groupName] else { return }
         selectProxyLabel.stringValue = info.now ?? ""
     }
 
