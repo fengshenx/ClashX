@@ -12,19 +12,39 @@ import SwiftyJSON
 
 class MenuItemFactory {
     private static var cachedProxyData: ClashProxyResp?
+    private static var cachedMenuItems: [NSMenuItem]?
+    private static var dataHash: Int = 0
+
+    private static func computeProxyDataHash(_ info: ClashProxyResp?) -> Int {
+        guard let info = info else { return 0 }
+        return Set(info.proxiesMap.keys).hashValue
+    }
 
     static let useViewToRenderProxy: Bool = AppDelegate.isAboveMacOS152
 
     // MARK: - Public
 
     static func refreshExistingMenuItems() {
+        // Use cached items directly if available — avoid rebuild on every menu open
+        if let cached = cachedMenuItems {
+            updateProxyList(withMenus: cached)
+        }
+
         ApiRequest.getMergedProxyData {
             info in
-            if info?.proxiesMap.keys != cachedProxyData?.proxiesMap.keys {
-                // force update menu
-                refreshMenuItems(mergedData: info)
+            let newHash = computeProxyDataHash(info)
+            if newHash == self.dataHash {
+                // Data unchanged, just post per-proxy notifications
+                for proxy in info?.proxies ?? [] {
+                    NotificationCenter.default.post(name: .proxyUpdate(for: proxy.name), object: proxy, userInfo: nil)
+                }
                 return
             }
+
+            // Data changed — update cache and rebuild
+            self.dataHash = newHash
+            self.cachedProxyData = info
+            self.refreshMenuItems(mergedData: info)
 
             for proxy in info?.proxies ?? [] {
                 NotificationCenter.default.post(name: .proxyUpdate(for: proxy.name), object: proxy, userInfo: nil)
@@ -35,8 +55,10 @@ class MenuItemFactory {
     static func recreateProxyMenuItems() {
         ApiRequest.getMergedProxyData {
             proxyInfo in
-            cachedProxyData = proxyInfo
-            refreshMenuItems(mergedData: proxyInfo)
+            self.dataHash = self.computeProxyDataHash(proxyInfo)
+            self.cachedProxyData = proxyInfo
+            self.cachedMenuItems = nil
+            self.refreshMenuItems(mergedData: proxyInfo)
         }
     }
 
@@ -62,6 +84,7 @@ class MenuItemFactory {
             }
         }
         let items = Array(menuItems.reversed())
+        cachedMenuItems = items
         updateProxyList(withMenus: items)
     }
 

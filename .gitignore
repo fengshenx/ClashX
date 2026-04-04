@@ -1,4 +1,5 @@
 Pods/
+.claude/
 Country.mmdb
 Carthage
 ClashX.a
