@@ -257,12 +257,16 @@ class MenuItemFactory {
                                              proxyGroup: ClashProxy,
                                              proxyInfo: ClashProxyResp) {
         let proxyMap = proxyInfo.proxiesMap
+        let selectedName = proxyGroup.now ?? ""
         for proxy in proxyGroup.all ?? [] {
             guard let proxyModel = proxyMap[proxy] else { continue }
             let proxyItem = ProxyMenuItem(proxy: proxyModel,
                                           group: proxyGroup,
                                           action: #selector(MenuItemFactory.actionSelectProxy(sender:)))
             proxyItem.target = MenuItemFactory.self
+            if proxyModel.name == selectedName {
+                proxyItem.state = .on
+            }
             submenu.add(delegate: proxyItem)
             submenu.addItem(proxyItem)
         }
@@ -358,6 +362,10 @@ extension MenuItemFactory {
                 ConfigManager.selectedProxyRecords.append(newModel)
                 // terminal Connections for this group
                 ConnectionManager.closeConnection(for: proxyGroup)
+                // Update cached data immediately so subsequent menuNeedsUpdate reads the correct now
+                if let groupIndex = MenuItemFactory.cachedProxyData?.proxyGroups.firstIndex(where: { $0.name == proxyGroup }) {
+                    MenuItemFactory.cachedProxyData?.proxyGroups[groupIndex].now = proxyName
+                }
                 // refresh menu items
                 MenuItemFactory.refreshExistingMenuItems()
             }

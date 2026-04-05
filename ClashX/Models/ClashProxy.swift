@@ -95,7 +95,7 @@ class ClashProxy: Codable {
     let type: ClashProxyType
     let all: [ClashProxyName]?
     let history: [ClashProxySpeedHistory]
-    let now: ClashProxyName?
+    var now: ClashProxyName?
     let alive: Bool?
     weak var enclosingResp: ClashProxyResp?
     weak var enclosingProvider: ClashProvider?
