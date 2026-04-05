@@ -15,9 +15,11 @@ class ProxyMenuItem: NSMenuItem {
     var needsDelayHistory: Bool = false
     private let isSimpleItem: Bool
 
-    var enableShowUsingView: Bool {
-        MenuItemFactory.useViewToRenderProxy
+    var shouldUseView: Bool {
+        !isSimpleItem && MenuItemFactory.shouldUseViewToRenderProxy(for: group)
     }
+
+    private let group: ClashProxy
 
     init(proxy: ClashProxy,
          group: ClashProxy,
@@ -25,12 +27,13 @@ class ProxyMenuItem: NSMenuItem {
          simpleItem: Bool = false) {
         proxyName = proxy.name
         groupName = group.name
+        self.group = group
         isSimpleItem = simpleItem
         maxProxyNameLength = simpleItem ? 0 : group.maxProxyNameLength
 
         super.init(title: proxyName, action: selector, keyEquivalent: "")
 
-        if !simpleItem && enableShowUsingView && group.isSpeedTestable {
+        if shouldUseView {
             view = ProxyItemView(proxy: proxy)
         } else if !simpleItem {
             attributedTitle = getAttributedTitle(name: proxyName, delay: proxy.history.last?.delayDisplay)

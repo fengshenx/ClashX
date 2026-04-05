@@ -26,7 +26,9 @@ class ProxyGroupMenu: NSMenu {
     var proxyInfo: ClashProxyResp?
     var menuType: GroupMenuType = .select
     var leftPadding: Bool = false
-    private var isPopulated: Bool = false
+    var isPopulated: Bool = false
+    private var lastRefreshGeneration: UInt64 = 0
+    private var lastRefreshNow: String = ""
 
     override init(title: String) {
         super.init(title: title)
@@ -45,18 +47,16 @@ class ProxyGroupMenu: NSMenu {
         highlightDelegates.remove(delegate)
     }
 
-    func markNeedsRepopulate(proxyGroup: ClashProxy, proxyInfo: ClashProxyResp) {
-        self.proxyGroup = proxyGroup
-        self.proxyInfo = proxyInfo
-        isPopulated = false
-        highlightDelegates.removeAllObjects()
-        removeAllItems()
-        addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
-    }
-
     /// Refresh all existing items from cache without rebuilding
     private func refreshItemsFromCache() {
         let group = proxyInfo?.proxiesMap[proxyGroup?.name ?? ""]
+        let currentGeneration = ProxyDelayCache.shared.generation
+        let currentNow = group?.now ?? ""
+        if currentGeneration == lastRefreshGeneration && currentNow == lastRefreshNow {
+            return
+        }
+        lastRefreshGeneration = currentGeneration
+        lastRefreshNow = currentNow
         for item in items {
             if let proxyItem = item as? ProxyMenuItem {
                 proxyItem.refreshFromCache(group: group)

@@ -14,9 +14,11 @@ class ProxyDelayCache {
     static let shared = ProxyDelayCache()
 
     private var delays = [ClashProxyName: (display: String, raw: Int)]()
+    private(set) var generation: UInt64 = 0
 
     func update(name: ClashProxyName, delay: String, raw: Int) {
         delays[name] = (display: delay, raw: raw)
+        generation &+= 1
     }
 
     func updateFromProxies(_ proxiesMap: [ClashProxyName: ClashProxy]) {
@@ -27,6 +29,7 @@ class ProxyDelayCache {
                 delays[name] = (display: last.delayDisplay, raw: last.delay)
             }
         }
+        generation &+= 1
     }
 
     func get(_ name: ClashProxyName) -> (display: String, raw: Int)? {
@@ -41,10 +44,26 @@ class MenuItemFactory {
 
     private static func computeProxyDataHash(_ info: ClashProxyResp?) -> Int {
         guard let info = info else { return 0 }
-        return Set(info.proxiesMap.keys).hashValue
+        var hasher = Hasher()
+        for group in info.proxyGroups {
+            hasher.combine(group.name)
+            hasher.combine(group.type.rawValue)
+            hasher.combine(group.now)
+            if let all = group.all {
+                for name in all {
+                    hasher.combine(name)
+                }
+            }
+        }
+        return hasher.finalize()
     }
 
     static let useViewToRenderProxy: Bool = AppDelegate.isAboveMacOS152
+
+    static func shouldUseViewToRenderProxy(for group: ClashProxy) -> Bool {
+        guard useViewToRenderProxy, group.isSpeedTestable else { return false }
+        return true
+    }
 
     // MARK: - Public
 
@@ -202,7 +221,8 @@ class MenuItemFactory {
         submenu.proxyInfo = proxyInfo
         submenu.menuType = .select
         submenu.leftPadding = leftPadding
-        submenu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
+        populateSelectorMenu(submenu, proxyGroup: proxyGroup, proxyInfo: proxyInfo)
+        submenu.isPopulated = true
         menu.submenu = submenu
         return menu
     }
@@ -220,7 +240,8 @@ class MenuItemFactory {
         submenu.proxyInfo = proxyInfo
         submenu.menuType = proxyGroup.type == .urltest ? .urltest : .fallback
         submenu.leftPadding = leftPadding
-        submenu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
+        populateUrlTestFallBackMenu(submenu, proxyGroup: proxyGroup, proxyInfo: proxyInfo)
+        submenu.isPopulated = true
         menu.submenu = submenu
         return menu
     }
@@ -235,7 +256,8 @@ class MenuItemFactory {
         submenu.proxyInfo = proxyInfo
         submenu.menuType = .loadBalance
         submenu.leftPadding = leftPadding
-        submenu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
+        populateLoadBalanceMenu(submenu, proxyGroup: proxyGroup, proxyInfo: proxyInfo)
+        submenu.isPopulated = true
         menu.submenu = submenu
         return menu
     }
@@ -246,7 +268,8 @@ class MenuItemFactory {
         submenu.proxyGroup = proxyGroup
         submenu.proxyInfo = proxyInfo
         submenu.menuType = .relay
-        submenu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
+        populateRelayMenu(submenu, proxyGroup: proxyGroup, proxyInfo: proxyInfo)
+        submenu.isPopulated = true
         menu.submenu = submenu
         return menu
     }
@@ -271,7 +294,7 @@ class MenuItemFactory {
             submenu.addItem(proxyItem)
         }
 
-        if proxyGroup.isSpeedTestable && useViewToRenderProxy {
+        if shouldUseViewToRenderProxy(for: proxyGroup) {
             submenu.minimumWidth = proxyGroup.maxProxyNameLength + ProxyItemView.fixedPlaceHolderWidth
         }
 
@@ -309,7 +332,7 @@ class MenuItemFactory {
             submenu.add(delegate: proxyItem)
             submenu.addItem(proxyItem)
         }
-        if proxyGroup.isSpeedTestable && useViewToRenderProxy {
+        if shouldUseViewToRenderProxy(for: proxyGroup) {
             submenu.minimumWidth = proxyGroup.maxProxyNameLength + ProxyItemView.fixedPlaceHolderWidth
         }
         addSpeedTestMenuItem(submenu, proxyGroup: proxyGroup)
