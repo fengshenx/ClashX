@@ -124,7 +124,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             clashSetupLogger()
 
             clash_setTrafficBlock { [weak self] up, down in
-                if RemoteControlManager.selectConfig == nil {
+                if RemoteControlManager.selectConfig == nil,
+                   ConfigManager.shared.showNetSpeedIndicator {
                     DispatchQueue.main.async {
                         self?.didUpdateTraffic(up: Int(up), down: Int(down))
                     }

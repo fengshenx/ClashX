@@ -76,7 +76,24 @@ class StatusItemView: NSView, StatusItemViewProtocol {
         }
     }
 
+    private var speedContainerSnapshot: (superview: NSView, index: Int)?
+
     func showSpeedContainer(show: Bool) {
-        speedContainerView.isHidden = !show
+        if show {
+            if speedContainerView.superview == nil,
+               let snapshot = speedContainerSnapshot {
+                let index = min(snapshot.index, snapshot.superview.subviews.count)
+                snapshot.superview.addSubview(speedContainerView, positioned: .above,
+                                              relativeTo: index > 0 ? snapshot.superview.subviews[index - 1] : nil)
+            }
+            speedContainerView.isHidden = false
+        } else {
+            if let superview = speedContainerView.superview {
+                let index = superview.subviews.firstIndex(of: speedContainerView) ?? 0
+                speedContainerSnapshot = (superview, index)
+                speedContainerView.removeFromSuperview()
+            }
+            speedContainerView.isHidden = true
+        }
     }
 }
