@@ -3,12 +3,12 @@
 <plist version="1.0">
 <dict>
 	<key>AssociatedBundleIdentifiers</key>
-	<string>com.west2online.ClashX</string>
+	<string>com.ming.clashx</string>
 	<key>Label</key>
-	<string>com.west2online.ClashX.ProxyConfigHelper</string>
+	<string>com.ming.clashx.ProxyConfigHelper</string>
 	<key>MachServices</key>
 	<dict>
-		<key>com.west2online.ClashX.ProxyConfigHelper</key>
+		<key>com.ming.clashx.ProxyConfigHelper</key>
 		<true/>
 	</dict>
 </dict>

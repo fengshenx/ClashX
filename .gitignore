@@ -31,3 +31,4 @@ gitupdate.bat
 
 # Swift Package Manager
 ClashX.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+build/
