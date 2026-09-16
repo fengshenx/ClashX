@@ -2,23 +2,32 @@
 set -e
 
 # Required environment variables:
-#   APPLE_ID       - Apple ID email
-#   APPLE_PASSWORD - App-specific password
-#   APPLE_TEAM_ID  - Apple Developer Team ID
 #   SIGN_IDENTITY  - Code signing identity (e.g. "Developer ID Application: Name (TEAMID)")
+#                    (SIGN_ID is accepted as a fallback)
+#   NOTARY_PROFILE - notarytool keychain profile name (e.g. APPDEV_NOTARY_PROFILE),
+#                    OR set APPLE_ID + APPLE_PASSWORD for app-specific-password auth
+#   APPLE_TEAM_ID  - Apple Developer Team ID (optional: parsed from SIGN_IDENTITY if omitted)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 SCHEME="ClashX"
 
+# Fall back to SIGN_ID if SIGN_IDENTITY is not set
+SIGN_IDENTITY="${SIGN_IDENTITY:-$SIGN_ID}"
+
+# Derive team ID from the signing identity if not provided, e.g. "... (65B2283FZJ)"
+APPLE_TEAM_ID="${APPLE_TEAM_ID:-$(echo "$SIGN_IDENTITY" | sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p')}"
+
 # Validate required env vars
-for var in APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID SIGN_IDENTITY; do
-  if [ -z "${!var}" ]; then
-    echo "Error: $var is not set"
-    exit 1
-  fi
-done
+if [ -z "$SIGN_IDENTITY" ] || [ -z "$APPLE_TEAM_ID" ]; then
+  echo "Error: set SIGN_IDENTITY to a 'Developer ID Application: Name (TEAMID)' identity"
+  exit 1
+fi
+if [ -z "$NOTARY_PROFILE" ] && { [ -z "$APPLE_ID" ] || [ -z "$APPLE_PASSWORD" ]; }; then
+  echo "Error: set NOTARY_PROFILE, or APPLE_ID + APPLE_PASSWORD for notarization"
+  exit 1
+fi
 
 echo "==> Creating build directory..."
 mkdir -p "$BUILD_DIR"
@@ -86,12 +95,44 @@ echo "Signature valid (notarization pending)"
 echo "==> Creating zip for notarization..."
 ditto -c -k --keepParent "$BUILD_DIR/ClashX.app" "$BUILD_DIR/ClashX_for_notarize.zip"
 
+# notarytool follows the system proxy, and the upload is a ~24 MB multipart PUT.
+# With a second proxy client also enabled the upload crosses two proxies and
+# stalls with HTTPClientError.deadlineExceeded, so show the path and retry.
+echo "==> Checking the notarization upload path..."
+PROXY_PORT=$(scutil --proxy | awk '/HTTPSPort :/ {print $3}')
+if [ -n "$PROXY_PORT" ]; then
+  PROXY_OWNER=$(lsof -nP -iTCP:"$PROXY_PORT" -sTCP:LISTEN 2>/dev/null | sed -n '2p' | awk '{print $1}')
+  echo "    system HTTPS proxy: 127.0.0.1:$PROXY_PORT (${PROXY_OWNER:-unknown})"
+fi
+
+notarize() {
+  if [ -n "$NOTARY_PROFILE" ]; then
+    xcrun notarytool submit "$BUILD_DIR/ClashX_for_notarize.zip" \
+      --keychain-profile "$NOTARY_PROFILE" \
+      --wait
+  else
+    xcrun notarytool submit "$BUILD_DIR/ClashX_for_notarize.zip" \
+      --apple-id "$APPLE_ID" \
+      --password "$APPLE_PASSWORD" \
+      --team-id "$APPLE_TEAM_ID" \
+      --wait
+  fi
+}
+
 echo "==> Notarizing..."
-xcrun notarytool submit "$BUILD_DIR/ClashX_for_notarize.zip" \
-  --apple-id "$APPLE_ID" \
-  --password "$APPLE_PASSWORD" \
-  --team-id "$APPLE_TEAM_ID" \
-  --wait
+for attempt in 1 2 3; do
+  if notarize; then
+    break
+  fi
+  if [ "$attempt" = 3 ]; then
+    echo "Error: notarization failed after 3 attempts." >&2
+    echo "If another proxy client also enables its system proxy or TUN, the upload" >&2
+    echo "runs through two proxies and times out - keep only one of them enabled." >&2
+    exit 1
+  fi
+  echo "Attempt $attempt failed, retrying in 5s..."
+  sleep 5
+done
 
 echo "==> Stapling notarization ticket to app..."
 xcrun stapler staple "$BUILD_DIR/ClashX.app"
