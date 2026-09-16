@@ -13,24 +13,27 @@ import RxSwift
 
 class StatusItemView: NSView, StatusItemViewProtocol {
     @IBOutlet var imageView: NSImageView!
-
-    @IBOutlet var uploadSpeedLabel: NSTextField!
-    @IBOutlet var downloadSpeedLabel: NSTextField!
     @IBOutlet var speedContainerView: NSView!
 
-    var up: Int = 0
-    var down: Int = 0
+    private var speedTextView: SpeedTextView!
+
+    // Use -1 so the first updateSpeedLabel(0, 0) call always triggers a redraw.
+    var up: Int = -1
+    var down: Int = -1
+
+    weak var statusItem: NSStatusItem?
 
     static func create(statusItem: NSStatusItem?) -> StatusItemView {
         var topLevelObjects: NSArray?
         if Bundle.main.loadNibNamed("StatusItemView", owner: self, topLevelObjects: &topLevelObjects) {
             let view = (topLevelObjects!.first(where: { $0 is NSView }) as? StatusItemView)!
+            view.statusItem = statusItem
             view.setupView()
             view.imageView.image = StatusItemTool.menuImage
 
             if let button = statusItem?.button {
-                // 修复 macOS 15+ 兼容性：在添加新子视图前移除所有现有子视图
-                // 这样可以避免在新版 macOS 中因为多次添加子视图而导致的崩溃
+                // Remove any existing subviews before adding to avoid duplicate-subview
+                // crashes on repeated StatusItem creation (affects macOS 15+).
                 button.subviews.forEach { $0.removeFromSuperview() }
                 button.addSubview(view)
                 button.imagePosition = .imageOverlaps
@@ -45,11 +48,23 @@ class StatusItemView: NSView, StatusItemViewProtocol {
     }
 
     func setupView() {
-        uploadSpeedLabel.font = StatusItemTool.font
-        downloadSpeedLabel.font = StatusItemTool.font
+        // Replace NSTextField with custom draw-based view to avoid
+        // macOS 26+ status bar NSTextField infinite redraw loop (high CPU bug).
+        // SpeedTextView automatically falls back to NSTextField on macOS < 26,
+        // so this is safe for all supported OS versions including macOS 10.15.
+        speedTextView = SpeedTextView()
+        speedTextView.translatesAutoresizingMaskIntoConstraints = false
+        speedContainerView.subviews.forEach { $0.removeFromSuperview() }
+        speedContainerView.addSubview(speedTextView)
+        NSLayoutConstraint.activate([
+            speedTextView.leadingAnchor.constraint(equalTo: speedContainerView.leadingAnchor),
+            speedTextView.trailingAnchor.constraint(equalTo: speedContainerView.trailingAnchor),
+            speedTextView.topAnchor.constraint(equalTo: speedContainerView.topAnchor),
+            speedTextView.bottomAnchor.constraint(equalTo: speedContainerView.bottomAnchor),
+            speedContainerView.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 3)
+        ])
 
-        uploadSpeedLabel.textColor = NSColor.labelColor
-        downloadSpeedLabel.textColor = NSColor.labelColor
+        updateSpeedLabel(up: 0, down: 0)
     }
 
     func updateSize(width: CGFloat) {
@@ -66,13 +81,21 @@ class StatusItemView: NSView, StatusItemViewProtocol {
 
     func updateSpeedLabel(up: Int, down: Int) {
         guard !speedContainerView.isHidden else { return }
+        var needsResize = false
         if up != self.up {
-            uploadSpeedLabel.stringValue = SpeedUtils.getSpeedString(for: up)
             self.up = up
+            needsResize = true
         }
         if down != self.down {
-            downloadSpeedLabel.stringValue = SpeedUtils.getSpeedString(for: down)
             self.down = down
+            needsResize = true
+        }
+        if needsResize {
+            speedTextView.update(
+                up: SpeedUtils.getSpeedString(for: up),
+                down: SpeedUtils.getSpeedString(for: down)
+            )
+            updateDynamicWidth()
         }
     }
 
@@ -87,6 +110,8 @@ class StatusItemView: NSView, StatusItemViewProtocol {
                                               relativeTo: index > 0 ? snapshot.superview.subviews[index - 1] : nil)
             }
             speedContainerView.isHidden = false
+            updateDynamicWidth()
+            speedTextView.needsDisplay = true
         } else {
             if let superview = speedContainerView.superview {
                 let index = superview.subviews.firstIndex(of: speedContainerView) ?? 0
@@ -94,6 +119,18 @@ class StatusItemView: NSView, StatusItemViewProtocol {
                 speedContainerView.removeFromSuperview()
             }
             speedContainerView.isHidden = true
+        }
+    }
+
+    private func updateDynamicWidth() {
+        guard !speedContainerView.isHidden else { return }
+        let maxTextWidth = speedTextView.textWidth
+        let neededWidth = 32.0 + maxTextWidth
+        let width = max(statusItemLengthWithSpeed, neededWidth)
+
+        if abs(frame.width - width) > 0.5 {
+            updateSize(width: width)
+            statusItem?.length = width
         }
     }
 }
