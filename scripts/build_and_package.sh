@@ -63,6 +63,22 @@ xcodebuild -exportArchive \
   -exportOptionsPlist "$BUILD_DIR/ExportOptions.plist" \
   -exportPath "$BUILD_DIR"
 
+# Xcode embeds x86_64-only copies of the Swift standard library for the 10.14
+# back-deployment target. The arm64 build loads the system runtime instead, so
+# those copies are dead weight (~11 MB) - drop them and re-sign the app.
+echo "==> Stripping x86_64-only Swift runtime copies..."
+for f in "$BUILD_DIR/ClashX.app/Contents/Frameworks"/*; do
+  [ -f "$f" ] || continue
+  if lipo -info "$f" 2>/dev/null | grep -q " architecture: x86_64$"; then
+    rm -f "$f"
+  fi
+done
+
+echo "==> Re-signing app..."
+codesign --force --options runtime --timestamp \
+  --entitlements "$PROJECT_DIR/ClashX/ClashX.entitlements" \
+  --sign "$SIGN_IDENTITY" "$BUILD_DIR/ClashX.app"
+
 echo "==> Verifying signature..."
 codesign --verify --deep --strict "$BUILD_DIR/ClashX.app"
 echo "Signature valid (notarization pending)"
