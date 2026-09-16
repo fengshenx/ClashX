@@ -8,6 +8,7 @@ require (
 	github.com/metacubex/mihomo v1.19.31
 	github.com/oschwald/geoip2-golang v1.9.0
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
+	go.yaml.in/yaml/v3 v3.0.5
 )
 
 require (
@@ -130,7 +131,6 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	gitlab.com/go-extension/aes-ccm v0.0.0-20230221065045-e58665ef23c7 // indirect
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/crypto v0.33.0 // indirect

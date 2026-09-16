@@ -152,6 +152,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // start watch config file change
         ConfigManager.watchCurrentConfigFile()
 
+        RemoteConfigManager.shared.migrateLegacyGeneratedRemoteConfigsIfNeeded()
+
         RemoteConfigManager.shared.autoUpdateCheck()
 
         setupNetworkNotifier()
@@ -402,8 +404,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         for _ in 0 ..< endIndex - startIndex {
             statusMenu.removeItem(at: startIndex)
         }
-        for each in menus {
-            statusMenu.insertItem(each, at: startIndex)
+        for (offset, each) in menus.enumerated() {
+            statusMenu.insertItem(each, at: startIndex + offset)
         }
     }
 

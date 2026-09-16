@@ -10,6 +10,20 @@ import Alamofire
 import Cocoa
 
 class RemoteConfigManager {
+    private static let generatedShareLinkTemplateVersion = 7
+    private static let generatedShareLinkMarker = "clashx-generated: share-links"
+    private static let generatedShareLinkMigrationKey = "kGeneratedShareLinkRemoteConfigMigrationVersion"
+    private static let defaultGeoIPDataURL = "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
+    private static let defaultGeoSiteDataURL = "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
+    private static let defaultMMDBDataURL = "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
+
+    private static let shareLinkSchemes = [
+        "ss://", "vmess://", "trojan://", "vless://",
+        "hysteria://", "hysteria2://", "hy2://",
+        "tuic://", "ssr://", "socks://", "socks5://", "socks5h://",
+        "http://", "https://", "anytls://", "mierus://"
+    ]
+
     var configs: [RemoteConfigModel] = []
     var refreshActivity: NSBackgroundActivityScheduler?
 
@@ -137,6 +151,21 @@ class RemoteConfigManager {
         }
     }
 
+    /// User-Agent sent when downloading remote subscription configs.
+    ///
+    /// Many subscription providers gate their Clash/mihomo-format response on the
+    /// request User-Agent. The historical ClashX UA (`ClashX/x.y.z ... Alamofire/x`)
+    /// is frequently treated as a legacy Dreamacro/clash client and is either
+    /// blocked or served a dummy config, because it does not support SS-2022 and
+    /// other modern protocols.
+    ///
+    /// This fork actually ships the mihomo (Clash.Meta) core, so declaring a Meta
+    /// client UA is both accurate and recognised by provider whitelists. Providers
+    /// match on different strings: some only answer `ClashX Meta/<version>`, while
+    /// others expect the plain `mihomo/<version>` form and return an empty body
+    /// for anything else.
+    private static let subscriptionUserAgent = "ClashX Meta/\(AppVersionUtil.currentVersion)"
+
     static func getRemoteConfigData(config: RemoteConfigModel, complete: @escaping ((String?, String?) -> Void)) {
         guard var urlRequest = try? URLRequest(url: config.url, method: .get) else {
             assertionFailure()
@@ -144,6 +173,7 @@ class RemoteConfigManager {
             return
         }
         urlRequest.cachePolicy = .reloadIgnoringCacheData
+        urlRequest.setValue(subscriptionUserAgent, forHTTPHeaderField: "User-Agent")
 
         AF.request(urlRequest)
             .validate()
@@ -161,7 +191,8 @@ class RemoteConfigManager {
               !trimmed.hasPrefix("port:"),
               !trimmed.hasPrefix("mixed-port:"),
               !trimmed.contains("proxies:"),
-              !trimmed.contains("proxy-groups:") else {
+              !trimmed.contains("proxy-groups:"),
+              !shareLinkSchemes.contains(where: { trimmed.hasPrefix($0) }) else {
             return nil
         }
         let base64Cleaned = trimmed
@@ -169,11 +200,407 @@ class RemoteConfigManager {
             .replacingOccurrences(of: "_", with: "/")
         let padded = base64Cleaned.padding(toLength: ((base64Cleaned.count + 3) / 4) * 4, withPad: "=", startingAt: 0)
         guard let data = Data(base64Encoded: padded, options: .ignoreUnknownCharacters),
-              let decoded = String(data: data, encoding: .utf8),
-              decoded.contains("proxies:") || decoded.contains("proxy-groups:") || decoded.contains("port:") || decoded.contains("mixed-port:") else {
+              let decoded = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        if decoded.contains("proxies:") || decoded.contains("proxy-groups:") || decoded.contains("port:") || decoded.contains("mixed-port:") {
+            return decoded
+        }
+
+        if let generated = buildConfigFromShareLinks(decoded) {
+            return generated
+        }
+
+        return decoded
+    }
+
+    private static func buildConfigFromShareLinks(_ decoded: String) -> String? {
+        if let converted = buildConfigFromShareLinksUsingMihomo(decoded) {
+            return converted
+        }
+
+        let lines = decoded
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !lines.isEmpty else { return nil }
+
+        var proxies: [String] = []
+        var names: [String] = []
+
+        for line in lines {
+            // Some subscriptions double-encode each URI: try base64-decoding
+            // lines that don't start with a known scheme.
+            let candidate: String
+            if shareLinkSchemes.contains(where: { line.hasPrefix($0) }) {
+                candidate = line
+            } else if let innerDecoded = decodeBase64ToString(line),
+                      shareLinkSchemes.contains(where: { innerDecoded.hasPrefix($0) }) {
+                candidate = innerDecoded
+            } else {
+                continue
+            }
+
+            guard let proxy = parseShareLink(candidate) else {
+                continue
+            }
+            proxies.append(proxy.yaml)
+            names.append("\"\(escapeYAML(proxy.name))\"")
+        }
+
+        guard !proxies.isEmpty else { return nil }
+
+        let proxyList = names.joined(separator: ", ")
+        let nameserverPolicy = nameserverPolicyYAML(from: proxies)
+        return """
+        # \(generatedShareLinkMarker)
+        # clashx-template-version: \(generatedShareLinkTemplateVersion)
+        # This file was auto-generated by ClashX from share-link subscriptions.
+        # It is a compatibility config, not a user-authored rule file.
+        # ClashX may safely auto-upgrade this generated template.
+        # Current template: geosite + geoip CN direct routing with DoH/DoT DNS.
+        mode: rule
+        log-level: info
+        geodata-mode: true
+
+        geox-url:
+          geoip: "\(defaultGeoIPDataURL)"
+          geosite: "\(defaultGeoSiteDataURL)"
+          mmdb: "\(defaultMMDBDataURL)"
+
+        dns:
+          enable: true
+          listen: "127.0.0.1:1053"
+          ipv6: true
+          enhanced-mode: redir-host
+          default-nameserver:
+            - 114.114.114.114
+            - 223.5.5.5
+            - 119.29.29.29
+          nameserver:
+            - https://223.5.5.5/dns-query
+            - https://doh.pub/dns-query
+            - 119.29.29.29
+            - 223.5.5.5
+            - tls://223.5.5.5:853
+            - tls://223.6.6.6:853
+          fallback:
+            - https://223.5.5.5/dns-query
+            - https://doh.pub/dns-query
+            - tls://1.1.1.1:853
+            - tls://8.8.8.8:853
+          fallback-filter:
+            geoip: false
+        \(nameserverPolicy)
+
+        proxies:
+        \(proxies.joined(separator: "\n"))
+
+        proxy-groups:
+          - name: "Proxy"
+            type: select
+            proxies: ["Auto", "DIRECT", \(proxyList)]
+          - name: "Auto"
+            type: url-test
+            proxies: [\(proxyList)]
+            url: "http://cp.cloudflare.com/generate_204"
+            interval: 300
+
+        rules:
+          - DOMAIN,localhost,DIRECT
+          - DOMAIN-SUFFIX,local,DIRECT
+          - DOMAIN-SUFFIX,cn,DIRECT
+          - GEOSITE,private,DIRECT
+          - GEOSITE,cn,DIRECT
+          - DOMAIN,www.baidu.com,DIRECT
+          - DOMAIN,baidu.com,DIRECT
+          - DOMAIN-KEYWORD,baidu,DIRECT
+          - DOMAIN-SUFFIX,baidu.com,DIRECT
+          - DOMAIN-SUFFIX,bdimg.com,DIRECT
+          - DOMAIN-SUFFIX,bdstatic.com,DIRECT
+          - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+          - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+          - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+          - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+          - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+          - IP-CIDR,169.254.0.0/16,DIRECT,no-resolve
+          - IP-CIDR,224.0.0.0/4,DIRECT,no-resolve
+          - IP-CIDR6,::1/128,DIRECT,no-resolve
+          - IP-CIDR6,fc00::/7,DIRECT,no-resolve
+          - IP-CIDR6,fe80::/10,DIRECT,no-resolve
+          - GEOIP,private,DIRECT
+          - GEOIP,CN,DIRECT
+          - MATCH,Proxy
+        """
+    }
+
+    private static func buildConfigFromShareLinksUsingMihomo(_ decoded: String) -> String? {
+        guard let converted = clashConvertShareLinks(decoded.goStringBuffer())?.toString(),
+              !converted.hasPrefix("error:"),
+              verifyConfig(string: converted) == nil else {
+            return nil
+        }
+        return converted
+    }
+
+    private static func isGeneratedShareLinkConfig(_ string: String) -> Bool {
+        string.contains(generatedShareLinkMarker)
+    }
+
+    private static func generatedTemplateVersion(from string: String) -> Int? {
+        guard let line = string
+            .split(whereSeparator: \.isNewline)
+            .map({ String($0) })
+            .first(where: { $0.contains("clashx-template-version:") }) else {
+            return nil
+        }
+
+        let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true)
+        guard parts.count == 2 else { return nil }
+        return Int(parts[1].trimmingCharacters(in: .whitespaces))
+    }
+
+    private static func isLegacyGeneratedShareLinkConfig(_ string: String) -> Bool {
+        if isGeneratedShareLinkConfig(string) {
+            return true
+        }
+
+        let hasCoreShape = string.contains("mode: rule") &&
+            string.contains("log-level: info") &&
+            string.contains("- name: \"Auto\"") &&
+            string.contains("type: url-test") &&
+            string.contains("url: \"http://cp.cloudflare.com/generate_204\"") &&
+            string.contains("- name: \"Proxy\"")
+
+        guard hasCoreShape else { return false }
+
+        let matchesKnownLegacyRules = string.contains("- MATCH,Proxy") ||
+            string.contains("- DOMAIN-SUFFIX,baidu.com,DIRECT") ||
+            string.contains("- GEOIP,CN,DIRECT")
+
+        return matchesKnownLegacyRules &&
+            !string.contains("proxy-providers:") &&
+            !string.contains("rule-providers:")
+    }
+
+    private static func classifyGeneratedTemplate(rawConfig: String, finalConfig: String) -> (generatedByShareLinks: Bool, templateVersion: Int?) {
+        if isGeneratedShareLinkConfig(finalConfig) {
+            return (true, generatedTemplateVersion(from: finalConfig) ?? generatedShareLinkTemplateVersion)
+        }
+
+        if verifyConfig(string: rawConfig) == nil {
+            return (false, nil)
+        }
+
+        return (isLegacyGeneratedShareLinkConfig(finalConfig), isLegacyGeneratedShareLinkConfig(finalConfig) ? generatedShareLinkTemplateVersion : nil)
+    }
+
+    func migrateLegacyGeneratedRemoteConfigsIfNeeded() {
+        let targetVersion = Self.generatedShareLinkTemplateVersion
+        let completedVersion = UserDefaults.standard.integer(forKey: Self.generatedShareLinkMigrationKey)
+        guard completedVersion < targetVersion else { return }
+        guard AppVersionUtil.hasVersionChanged || AppVersionUtil.isFirstLaunch else { return }
+
+        let candidates = configs.filter { config in
+            if config.generatedByShareLinks,
+               (config.generatedTemplateVersion ?? 0) < targetVersion {
+                return true
+            }
+
+            let path = Paths.localConfigPath(for: config.name)
+            guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+                return false
+            }
+            return Self.isLegacyGeneratedShareLinkConfig(content)
+        }
+
+        guard !candidates.isEmpty else {
+            UserDefaults.standard.set(targetVersion, forKey: Self.generatedShareLinkMigrationKey)
+            return
+        }
+
+        let group = DispatchGroup()
+        var didUpdateSelectedConfig = false
+        var upgradedConfigs = [String]()
+
+        for config in candidates {
+            group.enter()
+            Self.getRemoteConfigData(config: config) { rawConfig, _ in
+                guard let rawConfig else {
+                    group.leave()
+                    return
+                }
+                guard let decoded = Self.tryDecodeBase64(rawConfig),
+                      Self.isGeneratedShareLinkConfig(decoded) else {
+                    group.leave()
+                    return
+                }
+
+                Self.updateConfig(config: config) { error in
+                    if error == nil {
+                        upgradedConfigs.append(config.name)
+                        Logger.log("[Generated Config Migration] Auto-upgraded remote config '\(config.name)' to geosite template v\(targetVersion)")
+                        if config.name == ConfigManager.selectConfigName {
+                            didUpdateSelectedConfig = true
+                        }
+                    } else {
+                        let message = error ?? "unknown error"
+                        Logger.log("[Generated Config Migration] Failed to upgrade remote config '\(config.name)': \(message)", level: .warning)
+                    }
+                    group.leave()
+                }
+            }
+        }
+
+        group.notify(queue: .main) {
+            self.saveConfigs()
+            UserDefaults.standard.set(targetVersion, forKey: Self.generatedShareLinkMigrationKey)
+            if !upgradedConfigs.isEmpty {
+                Logger.log("[Generated Config Migration] Upgraded \(upgradedConfigs.count) generated remote config(s): \(upgradedConfigs.joined(separator: ", "))")
+            }
+            if didUpdateSelectedConfig {
+                NSUserNotificationCenter.default.post(title: NSLocalizedString("Compatibility Config Auto-Upgraded", comment: ""),
+                                                      info: NSLocalizedString("The active ClashX-generated remote compatibility config was upgraded to the geosite + geoip CN direct template. Your custom rule files were not changed.", comment: ""))
+                AppDelegate.shared.updateConfig(showNotification: false)
+            }
+        }
+    }
+
+    private static func nameserverPolicyYAML(from proxyYAMLBlocks: [String]) -> String {
+        let servers = proxyYAMLBlocks.compactMap { block -> String? in
+            guard let line = block
+                .split(whereSeparator: \.isNewline)
+                .map(String.init)
+                .first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("server:") }) else {
+                return nil
+            }
+            let value = line
+                .split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                .dropFirst()
+                .joined(separator: ":")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            guard !value.isEmpty, !value.contains(":") else { return nil }
+            let isIPv4 = value.split(separator: ".").count == 4 && value.allSatisfy { $0.isNumber || $0 == "." }
+            return isIPv4 ? nil : value
+        }
+        let uniqueServers = Array(Set(servers)).sorted()
+        guard !uniqueServers.isEmpty else { return "" }
+        let policies = uniqueServers
+            .map { "          \($0): \"https://223.5.5.5/dns-query\"" }
+            .joined(separator: "\n")
+        return """
+          nameserver-policy:
+        \(policies)
+        """
+    }
+
+    private struct ParsedSSProxy {
+        let name: String
+        let server: String
+        let port: Int
+        let cipher: String
+        let password: String
+
+        var yaml: String {
+            """
+              - name: \"\(RemoteConfigManager.escapeYAML(name))\"
+                type: ss
+                server: \"\(RemoteConfigManager.escapeYAML(server))\"
+                port: \(port)
+                cipher: \"\(RemoteConfigManager.escapeYAML(cipher))\"
+                password: \"\(RemoteConfigManager.escapeYAML(password))\"
+                udp: true
+            """
+        }
+    }
+
+    private static func parseSSShareLink(_ line: String) -> ParsedSSProxy? {
+        guard line.hasPrefix("ss://") else { return nil }
+
+        let raw = String(line.dropFirst(5))
+        let fragmentSplit = raw.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        let body = String(fragmentSplit[0])
+        let name = fragmentSplit.count > 1 ? (fragmentSplit[1].removingPercentEncoding ?? String(fragmentSplit[1])) : "Proxy"
+
+        let queryless = body.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let main = String(queryless[0])
+
+        let userAndHost: String
+        if main.contains("@") {
+            userAndHost = main
+        } else if let decoded = decodeBase64ToString(main), decoded.contains("@") {
+            userAndHost = decoded
+        } else {
+            return nil
+        }
+
+        let parts = userAndHost.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+
+        let userInfo = String(parts[0])
+        let hostPort = String(parts[1])
+
+        let methodAndPassword: String
+        if userInfo.contains(":") {
+            methodAndPassword = userInfo
+        } else if let decoded = decodeBase64ToString(userInfo), decoded.contains(":") {
+            methodAndPassword = decoded
+        } else {
+            return nil
+        }
+
+        let mp = methodAndPassword.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard mp.count == 2 else { return nil }
+        let cipher = String(mp[0])
+        let password = String(mp[1])
+
+        let hp = hostPort.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard hp.count == 2, let port = Int(hp[1]) else { return nil }
+
+        return ParsedSSProxy(name: name, server: String(hp[0]), port: port, cipher: cipher, password: password)
+    }
+
+    private static func decodeBase64ToString(_ string: String) -> String? {
+        let base64Cleaned = string
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let padded = base64Cleaned.padding(toLength: ((base64Cleaned.count + 3) / 4) * 4, withPad: "=", startingAt: 0)
+        guard let data = Data(base64Encoded: padded, options: .ignoreUnknownCharacters),
+              let decoded = String(data: data, encoding: .utf8) else {
             return nil
         }
         return decoded
+    }
+
+    private static func escapeYAML(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private struct ParsedProxyResult {
+        let name: String
+        let yaml: String
+    }
+
+    private static func parseShareLink(_ line: String) -> ParsedProxyResult? {
+        if line.hasPrefix("ss://") {
+            guard let ss = parseSSShareLink(line) else { return nil }
+            return ParsedProxyResult(name: ss.name, yaml: ss.yaml)
+        }
+        return nil
+    }
+
+    private static func looksLikeShareLinks(_ string: String) -> Bool {
+        guard let firstLine = string
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init) else { return false }
+        return shareLinkSchemes.contains(where: { firstLine.hasPrefix($0) })
     }
 
     static func updateConfig(config: RemoteConfigModel, complete: ((String?) -> Void)? = nil) {
@@ -186,6 +613,9 @@ class RemoteConfigManager {
             let newConfig: String
             if verifyConfig(string: rawConfig) == nil {
                 newConfig = rawConfig
+            } else if looksLikeShareLinks(rawConfig), let converted = buildConfigFromShareLinks(rawConfig) {
+                Logger.log("[Remote Config] Content was raw share links, converted successfully")
+                newConfig = converted
             } else if let decoded = tryDecodeBase64(rawConfig) {
                 Logger.log("[Remote Config] Content was base64 encoded, decoded successfully")
                 newConfig = decoded
@@ -198,6 +628,10 @@ class RemoteConfigManager {
                 complete?(NSLocalizedString("Remote Config Format Error", comment: "") + ": " + error)
                 return
             }
+
+            let generatedInfo = classifyGeneratedTemplate(rawConfig: rawConfig, finalConfig: newConfig)
+            config.generatedByShareLinks = generatedInfo.generatedByShareLinks
+            config.generatedTemplateVersion = generatedInfo.templateVersion
 
             if let suggestName = suggestedFilename, config.isPlaceHolderName {
                 let name = URL(fileURLWithPath: suggestName).deletingPathExtension().lastPathComponent
