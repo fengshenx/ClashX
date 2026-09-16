@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-ClashX is a macOS menu bar app that acts as a GUI for the [Clash](https://github.com/Dreamacro/clash) proxy core. It manages system proxy settings, provides a dashboard for connections, and supports rule-based traffic routing. The Clash core is written in Go and compiled into a C archive that the Swift app links against via cgo.
+ClashX is a macOS menu bar app that acts as a GUI for the [mihomo](https://github.com/MetaCubeX/mihomo) (Clash.Meta) proxy core. It manages system proxy settings, provides a dashboard for connections, and supports rule-based traffic routing. The core is written in Go and compiled into a C archive that the Swift app links against via cgo. The core version is pinned in `ClashX/goClash/go.mod`; the upstream project (Dreamacro/clash) is archived and is no longer used.
 
 ## Build Commands
 
@@ -12,13 +12,21 @@ ClashX is a macOS menu bar app that acts as a GUI for the [Clash](https://github
 # Install dependencies (Ruby gems + CocoaPods)
 ./install_dependency.sh
 
-# Build the Go core (universal binary: arm64 + x86_64, requires Go 1.21+)
+# Build the Go core (Apple Silicon only, requires Go 1.21+).
+# ~50 MB output: it is built with -s -w and the no_tailscale/no_easytier/no_zerotier
+# tags, which are required to keep the archive from growing well past 200 MB. With
+# those tags a config containing a tailscale/zerotier/easytier proxy fails to parse.
 python3 ClashX/goClash/build_clash_universal.py
 
-# Build the app (open workspace in Xcode)
+# Build the app (open workspace in Xcode; the project pins ARCHS = arm64)
 open ClashX.xcworkspace
 # Or from CLI:
 xcodebuild -workspace ClashX.xcworkspace -scheme ClashX -configuration Debug build
+
+# Package a signed + notarized DMG (needs SIGN_IDENTITY and NOTARY_PROFILE env vars).
+# It also strips the dead x86_64 Swift runtime copies Xcode embeds for the 10.14
+# back-deployment target, which the arm64 build never loads.
+./scripts/build_and_package.sh
 
 # Lint check via Fastlane (used in CI for PRs)
 bundle exec fastlane check
@@ -32,7 +40,7 @@ The project uses CocoaPods — always open `ClashX.xcworkspace`, not the `.xcode
 
 The most important architectural detail: the Clash proxy engine is Go code compiled to a static C archive (`goClash.a`). The bridge works as follows:
 
-- **Go side**: `ClashX/goClash/main.go` exports ~14 C functions via cgo (`//export` directives) — `run()`, `initClashCore()`, `clashUpdateConfig()`, etc.
+- **Go side**: `ClashX/goClash/main.go` exports ~14 C functions via cgo (`//export` directives) — `run()`, `initClashCore()`, `clashUpdateConfig()`, etc. A package-level `init()` pins the core's data directory to `~/.config/clash` (mihomo would otherwise default to `~/.config/mihomo`); it must stay a package-level init because ClashX calls `verifyGEOIPDataBase()` before `initClashCore()`.
 - **Swift side**: `ClashX-Bridging-Header.h` imports the generated `goClash.h`, making these functions callable from Swift.
 - **Process info**: `ClashX/goClash/proccess.go` reads macOS kernel sysctls (`net.inet.tcp.pcblist_n`) to extract per-connection PID/port info.
 

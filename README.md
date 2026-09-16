@@ -42,7 +42,8 @@ ClashX aims to provide a simple and lightweight proxy client with an intuitive i
 - HTTP/HTTPS and SOCKS protocol support
 - Surge-like configuration
 - GeoIP rule support
-- Support for Vmess/Shadowsocks/Socks5/Trojan protocols
+- Support for Shadowsocks/ShadowsocksR/Vmess/VLESS (Reality, XTLS Vision)/Trojan/Hysteria/Hysteria2/TUIC/Snell/Socks5/HTTP/WireGuard/SSH protocols
+- Proxy core: [mihomo](https://github.com/MetaCubeX/mihomo) (Clash.Meta)
 - Netfilter TCP redirect support
 - macOS 10.14+ compatibility
 - **macOS 15+ (Sequoia) support with compatibility fixes**

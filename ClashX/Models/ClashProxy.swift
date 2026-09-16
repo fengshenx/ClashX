@@ -25,8 +25,38 @@ enum ClashProxyType: String, Codable {
     case trojan = "Trojan"
     case relay = "Relay"
     case unknown = "Unknown"
-    case wireguard = "Wireguard"
+    case wireguard = "WireGuard"
     case vless = "Vless"
+    case hysteria = "Hysteria"
+    case hysteria2 = "Hysteria2"
+    case tuic = "Tuic"
+    case ssh = "Ssh"
+    case mieru = "Mieru"
+    case anyTLS = "AnyTLS"
+    case sudoku = "Sudoku"
+    case masque = "Masque"
+    case trustTunnel = "TrustTunnel"
+    case shadowQuic = "ShadowQuic"
+    case openVPN = "OpenVPN"
+    case tailscale = "Tailscale"
+    case zeroTier = "ZeroTier"
+    case easyTier = "EasyTier"
+    case gostRelay = "GostRelay"
+    case rejectDrop = "RejectDrop"
+    case compatible = "Compatible"
+    case pass = "Pass"
+    case passRule = "PassRule"
+    case rematch = "Rematch"
+    case dns = "Dns"
+
+    /// the old core spelled WireGuard differently, and a type this app cannot
+    /// name must not drop the whole proxy from the list
+    private static let legacyTypes: [String: ClashProxyType] = ["Wireguard": .wireguard]
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = ClashProxyType(rawValue: raw) ?? ClashProxyType.legacyTypes[raw] ?? .unknown
+    }
 
     static let proxyGroups: [ClashProxyType] = [.select, .urltest, .fallback, .loadBalance]
 

@@ -41,7 +41,8 @@ ClashX 旨在提供一个简单轻量化的代理客户端，具有直观的用�
 - 支持 HTTP/HTTPS 和 SOCKS 协议
 - Surge 风格的配置
 - GeoIP 规则支持
-- 支持 Vmess/Shadowsocks/Socks5/Trojan 协议
+- 支持 Shadowsocks/ShadowsocksR/Vmess/VLESS（Reality、XTLS Vision）/Trojan/Hysteria/Hysteria2/TUIC/Snell/Socks5/HTTP/WireGuard/SSH 协议
+- 内核为 [mihomo](https://github.com/MetaCubeX/mihomo)（Clash.Meta）
 - 支持 Netfilter TCP 重定向
 - 支持 macOS 10.14+
 - **支持 macOS 15+ (Sequoia) 并修复兼容性问题**

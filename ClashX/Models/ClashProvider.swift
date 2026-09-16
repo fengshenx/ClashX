@@ -37,7 +37,13 @@ class ClashProvider: Codable {
         case HTTP
         case File
         case Compatible
+        case Inline
         case Unknown
+
+        init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = ProviderVehicleType(rawValue: raw) ?? .Unknown
+        }
     }
 
     let name: ClashProviderName

@@ -21,13 +21,14 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/Dreamacro/clash/component/mmdb"
-	"github.com/Dreamacro/clash/config"
-	"github.com/Dreamacro/clash/constant"
-	"github.com/Dreamacro/clash/hub/executor"
-	"github.com/Dreamacro/clash/hub/route"
-	"github.com/Dreamacro/clash/log"
-	"github.com/Dreamacro/clash/tunnel/statistic"
+	"github.com/metacubex/mihomo/component/mmdb"
+	"github.com/metacubex/mihomo/config"
+	"github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/hub"
+	"github.com/metacubex/mihomo/hub/executor"
+	"github.com/metacubex/mihomo/hub/route"
+	"github.com/metacubex/mihomo/log"
+	"github.com/metacubex/mihomo/tunnel/statistic"
 	"github.com/oschwald/geoip2-golang"
 	"github.com/phayes/freeport"
 )
@@ -35,6 +36,15 @@ import (
 var secretOverride string = ""
 var enableIPV6 bool = false
 var savedUIPath string
+
+// mihomo defaults to ~/.config/mihomo, while ClashX keeps its data in ~/.config/clash.
+// This has to run before any exported function: ClashX calls verifyGEOIPDataBase
+// before it calls initClashCore.
+func init() {
+	if home, err := os.UserHomeDir(); err == nil {
+		constant.SetHomeDir(filepath.Join(home, ".config", "clash"))
+	}
+}
 
 func isAddrValid(addr string) bool {
 	if addr != "" {
@@ -168,8 +178,9 @@ func parseDefaultConfigThenStart(checkPort, allowLan, ipv6 bool, proxyPort uint3
 	if err != nil {
 		return nil, err
 	}
-	go route.Start(cfg.General.ExternalController, cfg.General.Secret)
-	executor.ApplyConfig(cfg, true)
+	// mihomo moved the RESTful API server startup into hub.ApplyConfig,
+	// it is equivalent to applyRoute(cfg) + executor.ApplyConfig(cfg, true)
+	hub.ApplyConfig(cfg)
 	return cfg, nil
 }
 
@@ -193,9 +204,8 @@ func clashSetupLogger() {
 	sub := log.Subscribe()
 	go func() {
 		for elm := range sub {
-			log := elm.(log.Event)
-			cs := C.CString(log.Payload)
-			cl := C.CString(log.Type())
+			cs := C.CString(elm.Payload)
+			cl := C.CString(elm.Type())
 			C.sendLogToUI(cs, cl)
 			C.free(unsafe.Pointer(cs))
 			C.free(unsafe.Pointer(cl))
@@ -243,8 +253,8 @@ func run(checkConfig, allowLan, ipv6 bool, portOverride uint32, externalControll
 	}
 
 	portInfo := map[string]string{
-		"externalController": cfg.General.ExternalController,
-		"secret":             cfg.General.Secret,
+		"externalController": cfg.Controller.ExternalController,
+		"secret":             cfg.Controller.Secret,
 	}
 
 	jsonString, err := json.Marshal(portInfo)
@@ -318,19 +328,20 @@ func verifyGEOIPDataBase() bool {
 
 //export clash_getCountryForIp
 func clash_getCountryForIp(ip *C.char) *C.char {
-	record, _ := mmdb.Instance().Country(net.ParseIP(C.GoString(ip)))
-	if record != nil {
-		return C.CString(record.Country.IsoCode)
+	// LookupCode handles all three GeoIP database layouts, a plain struct lookup
+	// would only work for MaxMind files
+	if codes := mmdb.IPInstance().LookupCode(net.ParseIP(C.GoString(ip))); len(codes) > 0 {
+		return C.CString(strings.ToUpper(codes[0]))
 	}
 	return C.CString("")
 }
 
 //export clash_closeAllConnections
 func clash_closeAllConnections() {
-	snapshot := statistic.DefaultManager.Snapshot()
-	for _, c := range snapshot.Connections {
-		c.Close()
-	}
+	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
+		_ = c.Close()
+		return true
+	})
 }
 
 //export clash_getProggressInfo
